@@ -1,0 +1,17 @@
+{
+  "name": "bili-downloader-app",
+  "version": "1.0.0",
+  "description": "Bilibili Downloader and Reviewer",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "author": "NoseBleedHD",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  }
+}

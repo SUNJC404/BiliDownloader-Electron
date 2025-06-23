@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Bilibili下载器 - 控制面板</title>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background: #f4f4f9; color: #333; max-width: 800px; margin: 20px auto; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1, h2 { color: #0056b3; border-bottom: 2px solid #eee; padding-bottom: 10px;}
+        .form-grid { display: grid; grid-template-columns: 150px 1fr; gap: 15px; align-items: center; margin-bottom: 20px; }
+        label { font-weight: bold; transition: color 0.3s; }
+        label.disabled { color: #aaa; }
+        input[type="text"], input[type="password"], input[type="number"], select { width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #ccc; box-sizing: border-box; }
+        input:disabled { background-color: #f0f0f0; cursor: not-allowed; }
+        .config-section, .log-section { background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        .switches label { margin-right: 20px; font-weight: normal;}
+        .button-container { display: flex; gap: 10px; align-items: center; }
+        button, .button-link { padding: 10px 20px; font-size: 16px; cursor: pointer; border: none; border-radius: 5px; color: white; transition: background-color 0.3s; text-decoration: none; display: inline-block; text-align: center; }
+        #start-btn { background-color: #007bff; }
+        #start-btn:disabled { background-color: #aaa; }
+        #review-btn { background-color: #28a745; }
+        #review-btn.disabled { background-color: #aaa; cursor: not-allowed; pointer-events: none; }
+        #direct-review-btn { background-color: #17a2b8; }
+        #log-output { white-space: pre-wrap; word-wrap: break-word; background: #222; color: #eee; padding: 15px; border-radius: 5px; height: 300px; overflow-y: auto; font-family: monospace; }
+        .log-error { color: #ff6b6b; }
+        /* Style for helper text blocks */
+        .path-helper { grid-column: 2; font-size: 12px; color: #555; background-color: #e9f5ff; border: 1px solid #bce8f1; border-radius: 4px; padding: 8px; margin-top: -10px; line-height: 1.5; }
+        .path-helper a { color: #0056b3; font-weight: bold; }
+        .path-description { grid-column: 2; font-size: 12px; color: #666; margin-top: -10px; }
+    </style>
+</head>
+<body>
+    <h1>Bilibili下载器 - 控制面板</h1>
+
+    <div class="config-section">
+        <h2>任务配置</h2>
+        <form id="control-form">
+            <div class="form-grid">
+                <label for="mode">下载模式:</label>
+                <select id="mode" name="mode">
+                    <option value="single">单个视频</option>
+                    <option value="favlist">收藏夹</option>
+                    <option value="today">今日视频 (关键词)</option>
+                </select>
+                <label for="target_id" id="target_id_label">目标ID:</label>
+                <input type="text" id="target_id" name="target_id" placeholder="BVID / AID / FID">
+                <label for="keyword" id="keyword_label">关键词:</label>
+                <input type="text" id="keyword" name="keyword" placeholder="'today'模式专用">
+                <label for="download_path">下载路径:</label>
+                <div style="display: flex; gap: 5px;">
+                    <input type="text" id="download_path" name="download_path" value="downloads" style="flex-grow: 1;">
+                    <button type="button" id="browse-btn" style="flex-shrink: 0; padding: 0 15px;">浏览</button>
+                </div>
+                <!-- <input type="text" id="download_path" name="download_path" value="downloads"> -->
+                <div class="path-description">可以是相对路径 (如 downloads)，或绝对路径 (如 D:\Bilibili)。</div>
+
+                <label for="sessdata">SESSDATA:</label>
+                <input type="text" id="sessdata" name="sessdata" placeholder="(可选) 粘贴Cookie以提高成功率/访问私密收藏夹">
+
+                <div></div>
+                <div class="path-helper">
+                    <strong>如何获取SESSDATA？</strong><br>
+                    <a href="https://www.bilibili.com/opus/552054768152938918" target="_blank" rel="noopener noreferrer">教程链接</a><br>
+                    数据关乎账号安全，注意保存。
+                </div>
+
+                <label for="max_concurrent_tasks">并发任务数:</label>
+                <input type="number" id="max_concurrent_tasks" name="max_concurrent_tasks" value="5" min="1" max="20">
+                <div></div> 
+                <div class="path-description">建议值为 3-8。网络好可适当调高，反之调低。</div>
+                <label>下载内容:</label>
+                <div class="switches">
+                    <input type="checkbox" id="download_video" name="download_video" checked> <label for="download_video">视频</label>
+                    <input type="checkbox" id="download_audio" name="download_audio" checked> <label for="download_audio">音频</label>
+                    <input type="checkbox" id="download_cover" name="download_cover" checked> <label for="download_cover">封面</label>
+                    <input type="checkbox" id="download_danmaku" name="download_danmaku" checked> <label for="download_danmaku">弹幕</label>
+                </div>
+            </div>
+            <div class="button-container">
+                 <button type="submit" id="start-btn">开始下载</button>
+                 <a id="direct-review-btn" href="/reviewer?mode=all" target="_blank" class="button-link">直接审核</a>
+            </div>
+        </form>
+    </div>
+
+    <div class="log-section">
+        <h2>实时日志</h2>
+        <pre id="log-output"></pre>
+        <a id="review-btn" href="#" target="_blank" class="button-link disabled">开始审核</a>
+    </div>
+
+    <script>
+        const socket = io();
+        const form = document.getElementById('control-form');
+        const logOutput = document.getElementById('log-output');
+        const startBtn = document.getElementById('start-btn');
+        const reviewBtn = document.getElementById('review-btn');
+        const formElements = form.elements;
+        const modeSelect = document.getElementById('mode');
+        const targetIdInput = document.getElementById('target_id');
+        const targetIdLabel = document.getElementById('target_id_label');
+        const keywordInput = document.getElementById('keyword');
+        const keywordLabel = document.getElementById('keyword_label');
+        const browseBtn = document.getElementById('browse-btn');
+        const downloadPathInput = document.getElementById('download_path');
+
+        browseBtn.addEventListener('click', async () => {
+            // 调用在 main.js 中定义的后台逻辑
+            const filePath = await window.ipcRenderer.invoke('dialog:openDirectory');
+            if (filePath) {
+                downloadPathInput.value = filePath;
+                // 触发表单的 change 事件以保存设置
+                downloadPathInput.dispatchEvent(new Event('change'));
+            }
+        });
+
+        function updateFormState() {
+            const currentMode = modeSelect.value;
+            targetIdInput.disabled = currentMode === 'today';
+            targetIdLabel.classList.toggle('disabled', currentMode === 'today');
+            keywordInput.disabled = currentMode !== 'today';
+            keywordLabel.classList.toggle('disabled', currentMode !== 'today');
+            if (currentMode === 'today') {
+                targetIdInput.placeholder = '无需填写';
+            } else if (currentMode === 'single') {
+                targetIdInput.placeholder = 'BVID / AID';
+            } else if (currentMode === 'favlist') {
+                targetIdInput.placeholder = '收藏夹 FID';
+            }
+        }
+        function saveSettings() {
+            const settings = {};
+            for (const element of formElements) {
+                if (element.name) {
+                    if (element.type === 'checkbox') settings[element.name] = element.checked;
+                    else settings[element.name] = element.value;
+                }
+            }
+            localStorage.setItem('biliDownloaderSettings', JSON.stringify(settings));
+        }
+        function loadSettings() {
+            const savedSettings = localStorage.getItem('biliDownloaderSettings');
+            if (savedSettings) {
+                const settings = JSON.parse(savedSettings);
+                for (const key in settings) {
+                    if (formElements[key]) {
+                        if (formElements[key].type === 'checkbox') formElements[key].checked = settings[key];
+                        else formElements[key].value = settings[key];
+                    }
+                }
+            }
+            updateFormState();
+        }
+        for (const element of formElements) {
+            element.addEventListener('change', saveSettings);
+        }
+        modeSelect.addEventListener('change', updateFormState);
+        window.addEventListener('load', loadSettings);
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            startBtn.disabled = true;
+            reviewBtn.classList.add('disabled');
+            reviewBtn.removeAttribute('href');
+            logOutput.innerHTML = '';
+            const data = {};
+            for (const element of formElements){
+                 if (element.name) {
+                    if (element.type === 'checkbox') data[element.name] = element.checked;
+                    else if (element.type === 'number') data[element.name] = parseInt(element.value, 10);
+                    else data[element.name] = element.value;
+                }
+            }
+            socket.emit('start_download', data);
+        });
+        socket.on('log_message', (msg) => {
+            const line = document.createElement('span');
+            line.textContent = msg.data + '\n';
+            if (msg.is_error) line.className = 'log-error';
+            logOutput.appendChild(line);
+            logOutput.scrollTop = logOutput.scrollHeight;
+        });
+        socket.on('download_complete', (data) => {
+            startBtn.disabled = false;
+            if (!data.error) {
+                reviewBtn.classList.remove('disabled');
+                reviewBtn.href = `/reviewer?path=${encodeURIComponent(data.path)}&mode=new`;
+            }
+        });
+    </script>
+</body>
+</html>

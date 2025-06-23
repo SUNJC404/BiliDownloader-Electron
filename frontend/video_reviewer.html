@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>B站审核模拟器</title>
+    <style>
+        body { font-family: sans-serif; background: #f0f2f5; color: #333; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .container { width: 90%; max-width: 500px; text-align: center; }
+        .view { display: none; }
+        #reviewer-view { background: #fff; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); padding: 25px; }
+        #cover-link { display: block; text-decoration: none; margin-bottom: 20px; }
+        #cover-image { width: 100%; max-height: 400px; object-fit: cover; border-radius: 8px; cursor: pointer; background-color: #eee; }
+        #video-title { font-size: 24px; font-weight: bold; margin: 0 0 10px 0; }
+        #author-info { display: flex; justify-content: center; align-items: center; gap: 10px; margin-bottom: 15px; }
+        #author-avatar { width: 32px; height: 32px; border-radius: 50%; }
+        #status-container { font-size: 20px; margin-bottom: 25px; }
+        .status-true { color: #28a745; font-weight: bold; }
+        .status-false { color: #dc3545; font-weight: bold; }
+        button { border: none; cursor: pointer; border-radius: 8px; font-size: 16px; color: white; transition: background-color 0.2s; }
+        button:disabled { background-color: #ccc !important; cursor: not-allowed; }
+        .button-group { display: flex; justify-content: space-around; margin-bottom: 20px; }
+        .button-group button { width: 45%; padding: 12px 0; }
+        #yes-btn { background-color: #28a745; }
+        #no-btn { background-color: #dc3545; }
+        .nav-buttons { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #eee; padding-top: 20px; }
+        .nav-buttons button { width: auto; padding: 8px 16px; font-size: 14px; }
+        .nav-lr button { background-color: #007bff; }
+        #loading-view, #finished-view, #path-prompt-view h2 { font-size: 24px; color: #666; }
+        #path-prompt-view input { width: 80%; padding: 10px; font-size: 16px; margin: 20px 0; border: 1px solid #ccc; border-radius: 4px; }
+        #load-path-btn { background-color: #007bff; display: block; margin: 0 auto; width: auto; padding: 12px 24px; }
+        #path-prompt-view .path-helper { font-size: 12px; color: #666; margin-top: 15px; text-align: left; line-height: 1.6; border-top: 1px solid #eee; padding-top: 15px; }
+        #path-prompt-view .path-helper code { background-color: #e0e0e0; padding: 2px 4px; border-radius: 3px; }
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; display: none; }
+        .modal-content { background: white; padding: 25px; border-radius: 12px; width: 90%; max-width: 450px; text-align: left; }
+        .modal-content h2 { margin-top: 0; color: #333; }
+        .modal-content .form-group { margin-bottom: 15px; }
+        .modal-content label { display: block; margin-bottom: 5px; font-weight: bold; }
+        .modal-content input, .modal-content textarea { width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #ccc; box-sizing: border-box; }
+        .modal-content textarea { min-height: 100px; resize: vertical; }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+        .modal-actions button { width: auto; padding: 10px 20px; }
+        #modal-message { color: #dc3545; font-weight: bold; margin-bottom: 10px; min-height: 1em; }
+        #modal-save-btn { background-color: #007bff; }
+        #modal-skip-btn { background-color: #6c757d; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="path-prompt-view" class="view">
+            <h2>请输入视频文件夹所在的路径</h2>
+            <input type="text" id="path-input" placeholder="例如: downloads 或 D:\Bilibili" value="downloads">
+            <button id="load-path-btn">加载视频</button>
+            <div class="path-helper">
+                <strong>提示：</strong> 请输入包含所有视频信息文件夹 (video_info.json 所在文件夹的上一级目录) 的路径。<br>
+                例如，如果您的视频保存在 <code>D:\downloads\视频A</code> 和 <code>D:\downloads\视频B</code>，那么您应该在这里输入 <code>D:\downloads</code>。
+            </div>
+        </div>
+        <div id="loading-view" class="view"><h2>正在加载视频列表...</h2></div>
+        <div id="reviewer-view" class="view">
+            <a id="cover-link" href="#" target="_blank" rel="noopener noreferrer"><img id="cover-image" alt="视频封面" referrerpolicy="no-referrer"></a>
+            <h2 id="video-title">视频标题</h2>
+            <div id="author-info">
+                <img id="author-avatar" alt="作者头像" referrerpolicy="no-referrer">
+                <span id="author-name">作者</span>
+            </div>
+            <div id="status-container">Hachimi: <span id="hachimi-status"></span></div>
+            <div class="button-group">
+                <button id="yes-btn">是 (Yes)</button>
+                <button id="no-btn">否 (No)</button>
+            </div>
+            <div class="nav-buttons">
+                <div class="nav-lr"><button id="prev-video-btn">&lt; 上一条</button></div>
+                <button id="enable-fav-btn">开启收藏</button>
+                <div class="nav-lr"><button id="next-video-btn">下一条 &gt;</button></div>
+            </div>
+        </div>
+        <div id="finished-view" class="view"><h4>感谢你为健康网络环境做出的贡献！</h4></div>
+    </div>
+    <div id="fav-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2>设置收藏夹信息</h2>
+            <p id="modal-message"></p>
+            <div class="form-group">
+                <label for="fid-input">收藏夹ID (FID):</label>
+                <input type="text" id="fid-input" placeholder="留空则不进行收藏">
+            </div>
+            <div class="form-group">
+                <label for="sessdata-input">Cookie (SESSDATA & bili_jct):</label>
+                <textarea id="sessdata-input" placeholder="请粘贴包含 SESSDATA 和 bili_jct 的完整Cookie字符串"></textarea>
+            </div>
+            <div class="modal-actions">
+                <button id="modal-skip-btn">跳过</button>
+                <button id="modal-save-btn">保存并开始</button>
+            </div>
+        </div>
+    </div>
+    <script>
+        const pathPromptView = document.getElementById('path-prompt-view'),loadingView = document.getElementById('loading-view'),reviewerView = document.getElementById('reviewer-view'),finishedView = document.getElementById('finished-view'),pathInput = document.getElementById('path-input'),loadPathBtn = document.getElementById('load-path-btn'),yesBtn = document.getElementById('yes-btn'),noBtn = document.getElementById('no-btn'),coverLink = document.getElementById('cover-link'),coverImage = document.getElementById('cover-image'),videoTitle = document.getElementById('video-title'),hachimiStatus = document.getElementById('hachimi-status'),authorAvatar = document.getElementById('author-avatar'),authorName = document.getElementById('author-name'),favModal = document.getElementById('fav-modal'),modalMessage = document.getElementById('modal-message'),fidInput = document.getElementById('fid-input'),sessdataInput = document.getElementById('sessdata-input'),modalSaveBtn = document.getElementById('modal-save-btn'),modalSkipBtn = document.getElementById('modal-skip-btn'),prevVideoBtn = document.getElementById('prev-video-btn'),nextVideoBtn = document.getElementById('next-video-btn'),enableFavBtn = document.getElementById('enable-fav-btn');
+        let videoFolders = [],currentIndex = 0,downloadPath = '',targetFid = '',userSessdata = '',userCsrfToken = '',currentVideoInfo = null;
+        
+        function getCookieValue(cookieString, cookieName) {
+            const name = cookieName + "=", ca = decodeURIComponent(cookieString).split(';');
+            for(let i = 0; i <ca.length; i++) { let c = ca[i].trim(); if (c.indexOf(name) == 0) return c.substring(name.length, c.length); }
+            return "";
+        }
+        
+        function loadSettingsFromStorage() {
+            const savedFid = localStorage.getItem('biliReviewerFid');
+            const savedCookie = localStorage.getItem('biliReviewerCookie');
+            if (savedFid) fidInput.value = savedFid;
+            if (savedCookie) sessdataInput.value = savedCookie;
+        }
+
+        function updateFavButtonState() {
+            if (targetFid) {
+                enableFavBtn.textContent = '关闭收藏';
+                enableFavBtn.style.backgroundColor = '#dc3545';
+            } else {
+                enableFavBtn.textContent = '开启收藏';
+                enableFavBtn.style.backgroundColor = '#28a745';
+            }
+        }
+
+        window.onload = () => {
+            loadSettingsFromStorage();
+            const params = new URLSearchParams(window.location.search);
+            const pathFromUrl = params.get('path');
+            const modeFromUrl = params.get('mode') || 'all'; // Get mode, default to 'all'
+
+            if (pathFromUrl) {
+            pathInput.value = pathFromUrl;
+            // Pass the mode when showing the modal
+            favModal.dataset.mode = modeFromUrl; 
+            favModal.style.display = 'flex';
+            } else {
+                pathInput.value = 'downloads'; // Default path for direct review
+                pathPromptView.style.display = 'block';
+            }
+        };
+
+        modalSaveBtn.addEventListener('click', () => {
+            targetFid = fidInput.value.trim();
+            const cookieString = sessdataInput.value.trim();
+            modalMessage.textContent = '';
+            if (targetFid && !cookieString) { modalMessage.textContent = '错误：指定了收藏夹ID，必须提供Cookie信息。'; return; }
+            if (cookieString) {
+                userSessdata = getCookieValue(cookieString, 'SESSDATA');
+                userCsrfToken = getCookieValue(cookieString, 'bili_jct');
+                if (targetFid && (!userSessdata || !userCsrfToken)) { modalMessage.textContent = '错误：无法从Cookie中提取 SESSDATA 或 bili_jct。'; return; }
+            }
+            localStorage.setItem('biliReviewerFid', targetFid);
+            localStorage.setItem('biliReviewerCookie', cookieString);
+            updateFavButtonState();
+            favModal.style.display = 'none';
+            const mode = favModal.dataset.mode || 'all';
+            if (currentVideoInfo) {
+                addToFavorites().then(success => { if(success) moveToNextVideo(); });
+            } else {
+                fetchAndDisplayVideos(pathInput.value, mode);
+            }
+        });
+        
+        modalSkipBtn.addEventListener('click', () => {
+            targetFid = ''; userSessdata = ''; userCsrfToken = '';
+            console.log("收藏功能已跳过。");
+            updateFavButtonState();
+            favModal.style.display = 'none';
+            const mode = favModal.dataset.mode || 'all'; // Retrieve the mode
+            if (!currentVideoInfo) {
+                fetchAndDisplayVideos(pathInput.value, mode); // Pass the mode
+            }
+        });
+
+        loadPathBtn.addEventListener('click', () => {
+            const path = pathInput.value.trim();
+            if (path) {
+                pathPromptView.style.display = 'none';
+                favModal.dataset.mode = 'all'; // Direct review is always 'all' mode
+                favModal.style.display = 'flex';
+            } else {
+                alert('请输入一个有效的路径。');
+            }
+        });
+
+        enableFavBtn.addEventListener('click', () => {
+            if (targetFid) {
+                targetFid = ''; userSessdata = ''; userCsrfToken = '';
+                localStorage.removeItem('biliReviewerFid');
+                localStorage.removeItem('biliReviewerCookie');
+                console.log("收藏功能已关闭。");
+                updateFavButtonState();
+            } else {
+                modalMessage.textContent = '请确认或更新收藏夹信息。';
+                favModal.style.display = 'flex';
+            }
+        });
+
+        async function fetchAndDisplayVideos(path, mode = 'all') {
+            downloadPath = path; loadingView.style.display = 'block';
+            try {
+                const response = await fetch(`/api/list-folders?path=${encodeURIComponent(downloadPath)}`);
+                if (!response.ok) throw new Error(`服务器错误 (${response.status})`);
+                const data = await response.json();
+                if (data.error) throw new Error(data.error);
+                videoFolders = data;
+                if (videoFolders.length === 0) {
+                    loadingView.style.display = 'none';
+                    finishedView.innerHTML = `<h2>在路径 "${downloadPath}" 下未找到任何视频文件夹。</h2>`;
+                    finishedView.style.display = 'block'; return;
+                }
+                loadingView.style.display = 'none'; reviewerView.style.display = 'block';
+                targetFid = localStorage.getItem('biliReviewerFid');
+                const cookieString = localStorage.getItem('biliReviewerCookie');
+                if (targetFid && cookieString) {
+                    userSessdata = getCookieValue(cookieString, 'SESSDATA');
+                    userCsrfToken = getCookieValue(cookieString, 'bili_jct');
+                }
+                updateFavButtonState();
+                displayVideo(currentIndex);
+            } catch (error) { loadingView.innerHTML = `<h2>加载失败: ${error.message}</h2>`; }
+        }
+        async function displayVideo(index) {
+            if (index >= videoFolders.length) { reviewerView.style.display = 'none'; finishedView.style.display = 'block'; return; }
+            const folderName = videoFolders[index];
+            try {
+                const infoResponse = await fetch(`/api/get-file?path=${downloadPath}&folder=${folderName}&file=video_info.json`);
+                const infoData = await infoResponse.json();
+                currentVideoInfo = infoData;
+                coverImage.onerror = () => { coverImage.src = infoData.pic; coverImage.onerror = null; };
+                coverImage.src = `/api/get-file?path=${downloadPath}&folder=${folderName}&file=cover.jpg`;
+                coverLink.href = `https://www.bilibili.com/video/${infoData.bvid}`;
+                videoTitle.textContent = infoData.title;
+                hachimiStatus.textContent = infoData.isHachimi ? 'T' : 'F';
+                hachimiStatus.className = infoData.isHachimi ? 'status-true' : 'status-false';
+                if (infoData.owner) { authorName.textContent = infoData.owner.name; authorAvatar.src = infoData.owner.face; }
+                updateNavButtonState();
+            } catch (err) { console.error(`处理文件夹 "${folderName}" 时出错:`, err); moveToNextVideo(); }
+        }
+        function updateNavButtonState() { prevVideoBtn.disabled = currentIndex <= 0; nextVideoBtn.disabled = currentIndex >= videoFolders.length - 1; }
+        function moveToPrevVideo() { if (currentIndex > 0) { currentIndex--; displayVideo(currentIndex); } }
+        function moveToNextVideo() {
+            if (currentIndex < videoFolders.length - 1) {
+                yesBtn.disabled = false; noBtn.disabled = false;
+                currentIndex++; currentVideoInfo = null; displayVideo(currentIndex);
+            } else { reviewerView.style.display = 'none'; finishedView.style.display = 'block'; }
+        }
+        async function processYesClick() {
+            yesBtn.disabled = true; noBtn.disabled = true;
+            await updateHachimiStatus(true);
+
+            if (targetFid) {
+                const success = await addToFavorites();
+                if (success) { moveToNextVideo(); }
+            } else { moveToNextVideo(); }
+        }
+        async function updateHachimiStatus(newStatus) {
+            const folderName = videoFolders[currentIndex];
+            try {
+                const response = await fetch('/api/update-json', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: downloadPath, folder: folderName, status: newStatus }) });
+                if (!response.ok) throw new Error('保存本地JSON失败');
+            } catch (err) { alert(`保存失败: ${err.message}`); }
+        }
+        async function addToFavorites() {
+            if (!currentVideoInfo || !targetFid) return true;
+            try {
+                const response = await fetch('/api/add-to-favorites', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ aid: currentVideoInfo.aid, fid: targetFid, sessdata: userSessdata, csrf_token: userCsrfToken }) });
+                const result = await response.json();
+                if (result.code === 0) { console.log(`视频 (aid: ${currentVideoInfo.aid}) 成功添加到收藏夹 (fid: ${targetFid})`); return true; }
+                else if (result.code === 22005) { console.error('收藏夹已满！'); modalMessage.textContent = `错误：收藏夹 (FID: ${targetFid}) 已满！请输入一个新的FID。`; favModal.style.display = 'flex'; return false; }
+                else { throw new Error(`Bilibili API Error: ${result.message} (code: ${result.code})`); }
+            } catch (err) { alert(`添加到收藏夹失败: ${err.message}`); modalMessage.textContent = `错误: ${err.message}. 请检查Cookie和FID是否正确。`; favModal.style.display = 'flex'; return false; }
+        }
+        yesBtn.addEventListener('click', processYesClick);
+        noBtn.addEventListener('click', () => {
+            yesBtn.disabled = true; noBtn.disabled = true;
+            updateHachimiStatus(false).then(moveToNextVideo);
+        });
+        prevVideoBtn.addEventListener('click', moveToPrevVideo);
+        nextVideoBtn.addEventListener('click', moveToNextVideo);
+    </script>
+</body>
+</html>
